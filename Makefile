@@ -1,14 +1,26 @@
-ROOTCFLAGS = $(shell root-config --cflags)
-ROOTLIBS   = $(shell root-config --libs)
-ROOTGLIBS  = $(shell root-config --glibs)
-CXXFLAGS  += $(ROOTCFLAGS)
-LIBS       = $(ROOTLIBS) -lASImage
-GLIBS      = $(ROOTGLIBS)
-GXX	   = g++ -Wall -O3
+# ---------------- Configuration ----------------
+CXX       := g++
+CXXFLAGS  := -O3 -march=native -std=c++17 -Wall -Wextra
 
-simpix_start:  simpix_start.cpp
-	$(GXX) -o simpix_start simpix_start.cpp $(ROOTCFLAGS) $(LIBS) $(ROOTGLIBS)
+ROOTCFLAGS := $(shell root-config --cflags)
+ROOTLIBS   := $(shell root-config --libs)
 
+# Image libraries (needed for TASImage)
+IMGLIBS := -lASImage 
+
+TARGET := simpix
+SRC    := simpix_start.cpp
+
+# ---------------- Rules ----------------
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CXX) $(CXXFLAGS) $(ROOTCFLAGS) $^ -o $@ $(ROOTLIBS) $(IMGLIBS)
+
+run: $(TARGET)
+	./$(TARGET) imgA.png imgB.png out_AtoB.png
 
 clean:
-	rm -f simpix_start out.png
+	rm -f $(TARGET) *.o *.png *.pdf
+
+.PHONY: all run clean
