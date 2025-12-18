@@ -1,7 +1,8 @@
 # simpix
 
 
-Simply run make to create one image
+Simply run make to create one image that are named ImgA.png ImgB.png
+Refer to collage_1 and college_2 for the final image after generation 
 
 
 <!-- C++ starter code
