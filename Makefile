@@ -1,28 +1,34 @@
-# -------- Configuration --------
-CXX      := g++
-CXXFLAGS := -O3 -std=c++17 -Wall -Wextra
+# -------- Compiler --------
+CXX := g++
+CXXFLAGS := -O3 -std=c++20 -Wall -Wextra
+
+# -------- ROOT (conda) --------
 ROOTCFLAGS := $(shell root-config --cflags)
 ROOTLIBS   := $(shell root-config --libs --glibs)
 
+# Explicit ASImage libraries (not included in root-config output)
+ASIMAGELIBS := -lASImage -lASImageGui
+
+# -------- Target --------
 TARGET := simpix
 SRC    := simpix_start.cpp
 
 # -------- Default target --------
 .DEFAULT_GOAL := run
 
-# -------- Build rules --------
+# -------- Build --------
 $(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(ROOTCFLAGS) $< -o $@ $(ROOTLIBS)
+	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) \
+		$(ROOTCFLAGS) \
+		$(ROOTLIBS) \
+		$(ASIMAGELIBS)
 
-# -------- Run (default) --------
+# -------- Run --------
 run: $(TARGET)
 	./$(TARGET) imgA.png imgB.png out
 
-# -------- Optional targets --------
-debug:
-	$(CXX) -g -std=c++17 $(ROOTCFLAGS) $(SRC) -o $(TARGET)_dbg $(ROOTLIBS)
-
+# -------- Clean --------
 clean:
-	rm -f $(TARGET) $(TARGET)_dbg *.o
+	rm -f $(TARGET) *.o
 
-.PHONY: run debug clean
+.PHONY: run clean
