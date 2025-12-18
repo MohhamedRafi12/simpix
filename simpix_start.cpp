@@ -1,6 +1,13 @@
 // simpix.cpp
 // Simulated annealing pixel mapping: rearrange pixels of source image A to match target image B
 // using a one-to-one mapping (a permutation).
+//
+// This version produces BOTH transforms:
+//   - A -> B
+//   - B -> A
+// and makes a 2x2 collage:
+//   [1] A     [2] B
+//   [3] A->B  [4] B->A
 
 #include "TROOT.h"
 #include "TCanvas.h"
@@ -30,15 +37,6 @@ static inline int dist2_rgb(UInt_t a, UInt_t b){
   return dr*dr + dg*dg + db*db;
 }
 
-// reverse entire buffer (same flip you had originally) => 180-degree rotation
-static void flip_reverse_buffer(UInt_t* pix, long long N){
-  for(long long i=0;i<N/2;i++){
-    UInt_t tmp = pix[i];
-    pix[i] = pix[N - i - 1];
-    pix[N - i - 1] = tmp;
-  }
-}
-
 /* ---------------- Energy + O(1) swap delta ---------------- */
 
 static long long total_energy(const UInt_t* srcPix, const UInt_t* tgtPix,
@@ -47,7 +45,7 @@ static long long total_energy(const UInt_t* srcPix, const UInt_t* tgtPix,
   long long E = 0;
   const int N = (int)p.size();
   for(int i=0;i<N;i++){
-    E += dist2_rgb(srcPix[p[i]], tgtPix[i]);
+    E += (long long)dist2_rgb(srcPix[p[i]], tgtPix[i]);
   }
   return E;
 }
@@ -73,7 +71,7 @@ static inline long long delta_swap(const UInt_t* srcPix, const UInt_t* tgtPix,
 /* ---------------- Simulated annealing ---------------- */
 
 struct SAParams {
-  double T0     = 4000.0;   // starting temperature (tune if needed)
+  double T0     = 4000.0;   // starting temperature
   double alpha  = 0.995;    // cooling factor per temperature step
   int    nTemps = 300;      // number of temperature steps
   int    movesPerT_mul = 10; // movesPerT = movesPerT_mul * N
@@ -91,14 +89,11 @@ static vector<int> anneal_permutation(const UInt_t* srcPix, const UInt_t* tgtPix
   // permutation p: output position i gets source pixel index p[i]
   vector<int> p(N);
   for(int i=0;i<N;i++) p[i]=i;
-
-  // random initial mapping (better exploration)
   shuffle(p.begin(), p.end(), rng);
 
   long long E = total_energy(srcPix, tgtPix, p);
   E_init = E;
 
-  // keep track of best seen permutation
   vector<int> p_best = p;
   E_best = E;
 
@@ -149,49 +144,70 @@ static vector<int> anneal_permutation(const UInt_t* srcPix, const UInt_t* tgtPix
   return p_best;
 }
 
+static TASImage build_transform_image(const TASImage& srcImg,
+                                      const UInt_t* srcPix,
+                                      const vector<int>& perm,
+                                      int W, int H)
+{
+  const int N = W*H;
+
+  TASImage out(srcImg);      // clone => valid internal image
+  out.SetEditable(kTRUE);    // allow edits to stick
+  UInt_t* outPix = out.GetArgbArray();
+
+  for(int i=0;i<N;i++){
+    UInt_t p = srcPix[perm[i]];
+    outPix[i] = (p & 0x00FFFFFF) | 0xFF000000; // opaque
+  }
+  return out;
+}
+
 /* ---------------- Main ---------------- */
 
 int main(int argc, char **argv){
 
   if(argc < 3){
-    cout << "Usage: simpix imageA imageB <out_AtoB.png>\n";
+    cout << "Usage: simpix imageA imageB <out_prefix>\n";
+    cout << "Outputs: <prefix>_AtoB.png, <prefix>_BtoA.png, collage.png\n";
     return 0;
   }
 
-  TString fsrc = argv[1];
-  TString ftgt = argv[2];
-  TString fout = (argc > 3) ? argv[3] : "out_AtoB.png";
+  TString fA = argv[1];
+  TString fB = argv[2];
 
-  TString fout_flipped = fout;
-  if(fout_flipped.EndsWith(".png")) fout_flipped.ReplaceAll(".png","_flipped.png");
-  else fout_flipped += "_flipped.png";
+  TString prefix = (argc > 3) ? argv[3] : "out";
+  // allow passing "out.png" too, we'll strip .png if present
+  if(prefix.EndsWith(".png")) prefix.ReplaceAll(".png","");
 
-  cout << "Reading images:\n  A(source)= " << fsrc << "\n  B(target)= " << ftgt << "\n";
-  cout << "Output: " << fout << "\n";
+  TString outAtoB = prefix + "_AtoB.png";
+  TString outBtoA = prefix + "_BtoA.png";
+
+  cout << "Reading images:\n  A(source)= " << fA << "\n  B(target)= " << fB << "\n";
+  cout << "Outputs:\n  " << outAtoB << "\n  " << outBtoA << "\n";
 
   TApplication app("app", &argc, argv);
   gROOT->SetBatch(kTRUE);
 
-  TASImage src(fsrc.Data());
-  TASImage tgt(ftgt.Data());
+  TASImage A(fA.Data());
+  TASImage B(fB.Data());
 
   cout << "ROOT sees:\n";
-  cout << "  src: " << src.GetWidth() << " x " << src.GetHeight() << "\n";
-  cout << "  tgt: " << tgt.GetWidth() << " x " << tgt.GetHeight() << "\n";
+  cout << "  A: " << A.GetWidth() << " x " << A.GetHeight() << "\n";
+  cout << "  B: " << B.GetWidth() << " x " << B.GetHeight() << "\n";
 
-  assert(src.GetWidth()  == tgt.GetWidth());
-  assert(src.GetHeight() == tgt.GetHeight());
+  assert(A.GetWidth()  == B.GetWidth());
+  assert(A.GetHeight() == B.GetHeight());
 
-  int W = src.GetWidth();
-  int H = src.GetHeight();
+  int W = A.GetWidth();
+  int H = A.GetHeight();
   int N = W*H;
 
   cout << "Pixel Geometry: " << W << " x " << H << "  (N=" << N << ")\n";
 
-  UInt_t* srcPix = src.GetArgbArray();
-  UInt_t* tgtPix = tgt.GetArgbArray();
+  UInt_t* APix = A.GetArgbArray();
+  UInt_t* BPix = B.GetArgbArray();
 
-  // Simulated annealing parameters (tune if needed)
+  // Simulated annealing parameters
   SAParams P;
   P.T0 = 4000.0;
   P.alpha = 0.995;
@@ -199,48 +215,45 @@ int main(int argc, char **argv){
   P.movesPerT_mul = 10;
   P.seed = 12345;
 
-  long long E0=0, Ebest=0;
-
+  // ---------- A -> B ----------
+  long long E0_AB=0, Ebest_AB=0;
   auto t0 = chrono::high_resolution_clock::now();
-  vector<int> bestPerm = anneal_permutation(srcPix, tgtPix, N, P, E0, Ebest);
+  vector<int> permAB = anneal_permutation(APix, BPix, N, P, E0_AB, Ebest_AB);
   auto t1 = chrono::high_resolution_clock::now();
+  double secAB = chrono::duration<double>(t1-t0).count();
 
-  double seconds = chrono::duration<double>(t1-t0).count();
-  cout << "Initial energy: " << E0 << "\n";
-  cout << "Best energy:    " << Ebest << "\n";
-  cout << "Runtime:        " << seconds << " s\n";
+  cout << "\n[A->B]\n";
+  cout << "Initial energy: " << E0_AB << "\n";
+  cout << "Best energy:    " << Ebest_AB << "\n";
+  cout << "Runtime:        " << secAB << " s\n";
 
-  // Build output image from best permutation
-  TASImage out(W, H);
-  UInt_t* outPix = out.GetArgbArray();
+  TASImage imgAtoB = build_transform_image(A, APix, permAB, W, H);
+  imgAtoB.WriteImage(outAtoB.Data());
 
-  for(int i=0;i<N;i++){
-    UInt_t p = srcPix[bestPerm[i]];
-    outPix[i] = (p & 0x00FFFFFF) | 0xFF000000; // force opaque
-  }
+  // ---------- B -> A ----------
+  long long E0_BA=0, Ebest_BA=0;
+  auto t2 = chrono::high_resolution_clock::now();
+  vector<int> permBA = anneal_permutation(BPix, APix, N, P, E0_BA, Ebest_BA);
+  auto t3 = chrono::high_resolution_clock::now();
+  double secBA = chrono::duration<double>(t3-t2).count();
 
-  // Save correct orientation output
-  out.WriteImage(fout.Data());
+  cout << "\n[B->A]\n";
+  cout << "Initial energy: " << E0_BA << "\n";
+  cout << "Best energy:    " << Ebest_BA << "\n";
+  cout << "Runtime:        " << secBA << " s\n";
 
-  // Make flipped version (reverse-buffer flip = 180-degree rotation)
-  // TASImage outFlip(out);
-  // UInt_t* outFlipPix = outFlip.GetArgbArray();
-  // flip_reverse_buffer(outFlipPix, (long long)N);
-  // outFlip.WriteImage(fout_flipped.Data());
+  TASImage imgBtoA = build_transform_image(B, BPix, permBA, W, H);
+  imgBtoA.WriteImage(outBtoA.Data());
 
-  TASImage outFlip(out);
-  outFlip.Flip(180);                 // 180-degree rotation
-  outFlip.WriteImage(fout_flipped.Data());
-
-  // Collage: A, B, out, outFlipped
+  // Collage: A, B, A->B, B->A
   TCanvas c("c","simpix",1200,900);
   c.Divide(2,2);
-  c.cd(1); src.Draw("X");
-  c.cd(2); tgt.Draw("X");
-  c.cd(3); out.Draw("X");
-  c.cd(4); outFlip.Draw("X");
+  c.cd(1); A.Draw("X");
+  c.cd(2); B.Draw("X");
+  c.cd(3); imgAtoB.Draw("X");
+  c.cd(4); imgBtoA.Draw("X");
   c.Print("collage.png");
 
-  cout << "Wrote: " << fout << ", " << fout_flipped << ", collage.png\n";
+  cout << "\nWrote: " << outAtoB << ", " << outBtoA << ", collage.png\n";
   return 0;
 }

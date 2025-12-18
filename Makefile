@@ -1,26 +1,28 @@
-# ---------------- Configuration ----------------
-CXX       := g++
-CXXFLAGS  := -O3 -march=native -std=c++17 -Wall -Wextra
-
+# -------- Configuration --------
+CXX      := g++
+CXXFLAGS := -O3 -std=c++17 -Wall -Wextra
 ROOTCFLAGS := $(shell root-config --cflags)
-ROOTLIBS   := $(shell root-config --libs)
-
-# Image libraries (needed for TASImage)
-IMGLIBS := -lASImage 
+ROOTLIBS   := $(shell root-config --libs --glibs)
 
 TARGET := simpix
 SRC    := simpix_start.cpp
 
-# ---------------- Rules ----------------
-all: $(TARGET)
+# -------- Default target --------
+.DEFAULT_GOAL := run
 
+# -------- Build rules --------
 $(TARGET): $(SRC)
-	$(CXX) $(CXXFLAGS) $(ROOTCFLAGS) $^ -o $@ $(ROOTLIBS) $(IMGLIBS)
+	$(CXX) $(CXXFLAGS) $(ROOTCFLAGS) $< -o $@ $(ROOTLIBS)
 
+# -------- Run (default) --------
 run: $(TARGET)
-	./$(TARGET) imgA.png imgB.png out_AtoB.png
+	./$(TARGET) imgA.png imgB.png out
+
+# -------- Optional targets --------
+debug:
+	$(CXX) -g -std=c++17 $(ROOTCFLAGS) $(SRC) -o $(TARGET)_dbg $(ROOTLIBS)
 
 clean:
-	rm -f $(TARGET) *.o *.png *.pdf
+	rm -f $(TARGET) $(TARGET)_dbg *.o
 
-.PHONY: all run clean
+.PHONY: run debug clean
